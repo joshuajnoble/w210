@@ -1,0 +1,96 @@
+---
+title: "w210_eda"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(stargazer)
+library(stringr)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r intake}
+acs_19 = read.csv("~/Desktop/capstone_data/demographics/acs_data_2019.csv")
+
+tx_evictions = read.csv("~/Desktop/capstone_data/evictions/TX_tracts.csv")
+dallas_evictions = read.csv("~/Desktop/capstone_data/evictions/dallas_weekly_2020_2021.csv")
+houston_evictions = read.csv("~/Desktop/capstone_data/evictions/houston_weekly_2020_2021.csv")
+```
+
+```{r intake}
+
+dallas_geos <- unique(c(dallas_evictions$GEOID))
+houston_geos <- unique(c(houston_evictions$GEOID))
+
+dallas_acs_19 <- acs_19[ which(acs_19$Geo_FIPS %in% dallas_geos), ]
+houston_acs_19 <- acs_19[ which(acs_19$Geo_FIPS %in% houston_geos), ]
+
+dallas_evictions %>% group_by(dallas_evictions$GEOID) %>% summarize(evictions = sum(dallas_evictions$filings_2020))
+
+dallas_evictions_sum <- dallas_evictions %>% dplyr::group_by(GEOID) %>% dplyr::summarize(evictions = sum(filings_2020))
+dallas_acs_sum <- merge(dallas_evictions_sum, dallas_acs_19, by.x ="GEOID", by.y="Geo_FIPS")
+
+dallas_acs_sum['poverty'] <- dallas_acs_sum['SE_A13005A_003'] + dallas_acs_sum['SE_A13005A_004']
+dallas_acs_sum['over_50_pct'] <- dallas_acs_sum['SE_A18011_006'] / dallas_acs_sum['SE_A18011_001'] #A18011_001
+dallas_acs_sum["renters_pct_family"] <- dallas_acs_sum$SE_A10004B_002 / dallas_acs_sum$SE_A10004B_001 * 100
+
+houston_evictions_sum <- houston_evictions %>% dplyr::group_by(GEOID) %>% dplyr::summarize(evictions = sum(filings_2020))
+houston_acs_sum <- merge(houston_evictions_sum, houston_acs_19, by.x ="GEOID", by.y="Geo_FIPS")
+
+houston_acs_sum['poverty'] <- houston_acs_sum['SE_A13005A_003'] + houston_acs_sum['SE_A13005A_004']
+houston_acs_sum['over_50_pct'] <- houston_acs_sum['SE_A18011_006'] / houston_acs_sum['SE_A18011_001'] #A18011_001
+houston_acs_sum["renters_pct_family"] <- houston_acs_sum$SE_A10004B_002 / houston_acs_sum$SE_A10004B_001 * 100
+
+```
+
+```{r mode}
+hist(dallas_acs_sum$over_50_pct)
+```
+
+
+```{r acs}
+oldnames <- c("SE_A03001_003", "SE_A04001_010", "SE_A03001_002", "SE_A18003_001", "SE_B17008_006", "SE_B13004_002", "SE_B13004_003", "SE_A18010_001", "SE_A06001_005", "SE_B18002_002", "SE_B18002_003", "SE_A08002B_003", "SE_A10011_003", "SE_A10039B_009")
+newnames <- c("tract_black", "tract_hisp", "tract_white", "pct_income_rent", "food_service_workers", "under_poverty", "under_povertyX2", "median_rent", "non_citizen", "rent30_49pct", "rent50pct", "moved", "no_earnings", "income_20_34k_30pct_to_housing")
+setdiff(dallas_acs_sum, houston_acs_sum)
+
+dal_hou <- rbind(dallas_acs_sum, houston_acs_sum)
+
+existing <- match(oldnames,names(dal_hou))
+names(dal_hou)[na.omit(existing)] <- newnames[which(!is.na(existing))]
+
+#dal_hou$pct_income_rent <- dal_hou$pct_income_rent * 100
+dal_hou$moved <- dal_hou$SE_A08002B_004 + dal_hou$moved
+#dal_hou$risk <- dal_hou$PRED3_E + dal_hou$PRED12_E
+
+acs.demo.lm <- lm(dal_hou$evictions ~
+                   as.numeric( dal_hou$tract_black ) + #census tract black pct
+                   as.numeric( dal_hou$median_rent ) + 
+                   as.numeric( dal_hou$non_citizen ) +
+                   as.numeric( dal_hou$rent30_49pct) +
+                   as.numeric( dal_hou$rent50pct) +
+                   as.numeric( dal_hou$moved) +
+                   as.numeric( dal_hou$income_20_34k_30pct_to_housing) +
+                   as.numeric( dal_hou$no_earnings)
+                 )
+
+summary(acs.demo.lm)
+stargazer(acs.demo.lm, type="text")
+
+write.csv(dal_hou, "dal_hou.csv")
+
+```
+
+```{r rmse}
+
+rmse <- sqrt(mean(acs.demo.lm$residuals^2))
+print(rmse)
+
+```
+
