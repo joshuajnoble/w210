@@ -4,4 +4,4 @@
 addresses
 demographics
 geocodes
-*.csv
+non_web_data
